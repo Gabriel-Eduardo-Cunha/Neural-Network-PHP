@@ -1,5 +1,7 @@
 <?php
 
+require 'vendor/sourceNetwork/mathFunctions.php';
+
 class Matrix
 {
     //ATTRIBUTES
@@ -181,7 +183,7 @@ class Matrix
 
     //PROTECTED STATIC FUNCIONS
 
-    protected static function convertSimpleArray($array)
+    public static function convertSimpleArray($array)
     {
         if (is_array($array)) {
             for ($i = 0; $i < count($array); $i++) {

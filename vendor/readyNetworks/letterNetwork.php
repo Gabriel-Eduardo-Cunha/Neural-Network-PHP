@@ -118,7 +118,7 @@ class Letter extends Network
         foreach ($predict as $key => $value) {
             $binary .= round($predict[$key][0]);
         }
-        if((bindec($binary)-1) < 0 || (bindec($binary)-1) > 25) 
+        if((bindec($binary)-1) < 0 || (bindec($binary)-1) > count($this->data['inputs']) - 1) 
         {
             return 'Falhou';
         }
@@ -129,7 +129,7 @@ class Letter extends Network
     {
         for ($i = 0; $i < $effort; $i++) {
             for ($index = 0; $index < count($this->data['inputs']); $index++) {
-                $this->network->train($this->stringToArray($this->data['inputs'][$index]), $this->data['outputs'][$index]);
+                $this->network->practice($this->stringToArray($this->data['inputs'][$index]), $this->data['outputs'][$index]);
             }
         }
         return $this->network->toJSON();
@@ -152,7 +152,7 @@ class Letter extends Network
         return $this->network;
     }
 
-    protected function stringToArray($string)
+    public function stringToArray($string)
     {
         $array = array();
         for ($i = 0; $i < strlen($string); $i++) {
