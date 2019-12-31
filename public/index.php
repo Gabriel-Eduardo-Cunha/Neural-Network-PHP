@@ -1,7 +1,7 @@
 <?php
-require('vendor/matrix.php');
-require('vendor/neuralNetwork.php');
-require('vendor/mathFunctions.php');
+require('vendor/sourceNetwork/matrix.php');
+require('vendor/sourceNetwork/neuralNetwork.php');
+require('vendor/sourceNetwork/mathFunctions.php');
 
 
 //HERE YOU DECIDE THE SIZE OF INPUT NODES, HIDDEN NODES AND OUTPUT NODES
