@@ -60,7 +60,7 @@ class Network
 
         $outputNodes = strlen(decbin(count($this->data['expected']) - 1));
         if (count($example) > $this->getINodes()) {
-            $inputNodes = count($example);
+            $inputNodes = count($example) * 3;
         } else {
             $inputNodes = $this->getINodes();
         }
@@ -89,9 +89,19 @@ class Network
         }
     }
 
-    public function teachWord($string)
+    public function teachWord($word)
     {
-        $this->insertData(Network::strToBinary($string), $string);
+        $word = strtolower($word);
+        $wordArray = Network::generateTeachingWords($word);
+        foreach ($wordArray as $value) {
+            $this->insertData(Network::strToBinary($value), $word);
+        }
+    }
+
+    public function teachWordExpecting($word, $expected)
+    {
+        $word = strtolower($word);
+        $this->insertData(Network::strToBinary($word), $expected);
     }
 
     public function guess($input)
@@ -100,18 +110,23 @@ class Network
         foreach ($this->predictBinary($input) as $key => $value) {
             $index .= $this->predictBinary($input)[$key][0];
         }
-        return $this->data['expected'][bindec($index)];
+        if (isset($this->data['expected'][bindec($index)])) {
+            return $this->data['expected'][bindec($index)];
+        } else {
+            return '*Not Found';
+        }
     }
 
     public function guessWord($string)
     {
+        $string = strtolower($string);
         return $this->guess(Network::strToBinary($string));
     }
 
     public function printAllGuesses()
     {
         for ($i = 0; $i < count($this->data['inputs']); $i++) {
-            echo $this->data['expected'][bindec(implode($this->data['outputs'][$i]))];
+            echo Network::binToString($this->data['inputs'][$i]);
             echo ' = ' . $this->guess($this->data['inputs'][$i]);
             echo '<br>';
         }
@@ -126,6 +141,15 @@ class Network
             }
         }
         return round($mse, 5);
+    }
+
+    public function getHitAvg()
+    {
+        $average = 0;
+        for ($i = 0; $i < 1000; $i++) {
+            $average += $this->getHit();
+        }
+        return round($average / 1000, 2);
     }
 
     public function countErrors()
@@ -162,21 +186,14 @@ class Network
         return '<br>Trained: ' . $attempts . '<br>During: ' . $endTime . ' seconds';
     }
 
+    public function trainUntilHitAvg()
+    {
+    }
+
     public function predict($input)
     {
-
-        //Input -> Hidden
-        $input = new Matrix($input);
-        $hidden = $this->weights_ih->mult($input);
-        $hidden = $hidden->add($this->bias_ih);
-        $hidden = $hidden->map('sigmoid');
-
-        //Hidden -> Output
-        $output = $this->weights_ho->mult($hidden);
-        $output = $output->add($this->bias_ho);
-        $output = $output->map('sigmoid');
-
-        return $output->getMatrixArray();
+        $output = $this->feedForward($input)['output']->getMatrixArray();
+        return $output;
     }
 
     public function predictBinary($input)
@@ -190,7 +207,8 @@ class Network
 
     public function toJSON()
     {
-        return Network::networkToJSON($this);
+        $json = Network::networkToJSON($this);
+        return $json;
     }
 
     public function printNetworkStatus()
@@ -200,9 +218,14 @@ class Network
         echo '<br>';
         echo 'MSE: ' . $this->getMSE();
         echo '<br>';
+        echo 'Hit Avegerage: ' . round($this->getHitAvg() * 100, 2) . '%';
+        echo '<br>';
         echo 'Errors: ' . $this->countErrors();
         echo '<br>';
-        $this->printAllGuesses();
+        echo 'Data Known: ' . count($this->data['outputs']);
+        echo '<br>';
+        echo 'Words Known: ' . count($this->data['expected']);
+        echo '<br>';
         echo '-----------------------END OF STATUS-----------------------';
         echo '<br>';
     }
@@ -214,7 +237,14 @@ class Network
         echo '</pre><br>';
     }
 
-    //PROTECTED FUNCTIONS
+    public function printJson()
+    {
+        echo '<br>';
+        print_r($this->toJSON());
+        echo '<br>';
+    }
+
+    //PROTECTED NON-STATIC FUNCTIONS
 
     protected function changeSize($i_nodes, $h_nodes, $o_nodes)
     {
@@ -231,6 +261,15 @@ class Network
 
     protected function practice($input, $target)
     {
+        //feedforward
+        $feedforward = $this->feedForward($input);
+
+        //Backpropagation
+        $this->backPropagation($feedforward, $target);
+    }
+
+    protected function feedForward($input)
+    {
         //Input -> Hidden
         $input = new Matrix($input);
         $hidden = $this->weights_ih->mult($input);
@@ -242,14 +281,17 @@ class Network
         $output = $output->add($this->bias_ho);
         $output = $output->map('sigmoid');
 
-        //Backpropagation
+        return array('input' => $input, 'hidden' => $hidden, 'output' => $output);
+    }
 
+    protected function backPropagation($feedforward, $target)
+    {
         //Output -> Hidden
         $expected = new Matrix($target);
-        $outputError = $expected->subtract($output);
-        $d_output = $output->map('d_sigmoid');
+        $outputError = $expected->subtract($feedforward['output']);
+        $d_output = $feedforward['output']->map('d_sigmoid');
 
-        $hidden_t = $hidden->transpose();
+        $hidden_t = $feedforward['hidden']->transpose();
 
         $gradient_o = $outputError->hadamard($d_output);
         $gradient_o = $gradient_o->scaleMult($this->learningRate);
@@ -264,9 +306,9 @@ class Network
         //Hidden -> Input
 
         $weights_ho_t = $this->weights_ho->transpose();
-        $input_t = $input->transpose();
+        $input_t = $feedforward['input']->transpose();
         $hiddenError = $weights_ho_t->mult($outputError);
-        $d_hidden = $hidden->map('d_sigmoid');
+        $d_hidden = $feedforward['hidden']->map('d_sigmoid');
 
         $gradient_h = $hiddenError->hadamard($d_hidden);
         $gradient_h = $gradient_h->scaleMult($this->learningRate);
@@ -279,6 +321,23 @@ class Network
         $this->weights_ih = $this->weights_ih->add($weights_ih_deltas);
     }
 
+    protected function getHit()
+    {
+        $hits = 0;
+        $total = 0;
+        for ($j = 0; $j < count($this->data['expected']); $j++) {
+            $word = $this->data['expected'][$j];
+            $guess = $this->guessWord(Network::randomString(random_int(1, 4)) . $word . Network::randomString(random_int(1, 4)));
+            if ($guess == $word) {
+                $hits += 1;
+            }
+            $total += 1;
+        }
+        return $hits / $total;
+    }
+
+    //PROTECTED STATIC FUNCTIONS
+
     protected static function strToBinary($string)
     {
         $array = array();
@@ -289,6 +348,51 @@ class Network
         }
         return $array;
     }
+
+    protected static function binToString($binary)
+    {
+        $binary = implode($binary);
+        $string = '';
+        for ($i = 0; $i < strlen($binary); $i += 7) {
+            $string .= chr(bindec(substr($binary, $i, 7)));
+        }
+        return $string;
+    }
+
+    protected static function generateTeachingWords($word)
+    {
+        $wordArray = array();
+        array_push($wordArray, $word);
+        if (strlen($word) > 2) {
+            array_push($wordArray, substr($word, 0, strlen($word) - 1));
+            array_push($wordArray, substr($word, 0, strlen($word) - 2));
+            array_push($wordArray, substr($word, 1, strlen($word)));
+            array_push($wordArray, substr($word, 2, strlen($word)));
+            array_push($wordArray, substr($word, 1, strlen($word) - 1));
+        }
+        array_push($wordArray, 'a' . $word . 'b');
+        array_push($wordArray, 'ab' . $word . 'cd');
+        array_push($wordArray, 'abc' . $word . 'def');
+        array_push($wordArray, 'abcd' . $word . 'efgh');
+        array_push($wordArray, 'efgh' . $word . 'abcd');
+        array_push($wordArray, 'efg' . $word . 'abc');
+        array_push($wordArray, 'ef' . $word . 'ab');
+        array_push($wordArray, 'e' . $word . 'a');
+
+        return $wordArray;
+    }
+
+    protected static function randomString($size)
+    {
+        $charSet = 'abcdefghijklmnopqrstuvwxyz';
+        $string = '';
+        for ($i = 0; $i < $size; $i++) {
+            $char = substr($charSet, random_int(0, 25), 1);
+            $string .= $char;
+        }
+        return $string;
+    }
+
 
     //STATIC FUNCTIONS
 
@@ -353,5 +457,12 @@ class Network
     public function getData()
     {
         return $this->data;
+    }
+
+    //SETTERS
+
+    public function setLearningRate($value)
+    {
+        $this->learningRate = $value;
     }
 }
